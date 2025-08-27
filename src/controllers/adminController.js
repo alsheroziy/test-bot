@@ -1,0 +1,797 @@
+const Test = require("../models/Test");
+const User = require("../models/User");
+const Subject = require("../models/Subject");
+const { adminMenu, mainMenu } = require("../utils/keyboards");
+const { Markup } = require("telegraf");
+const PDFGenerator = require("../utils/pdfGenerator");
+const fs = require("fs");
+
+class AdminController {
+  // Admin menyusini ko'rsatish
+  static async showAdminMenu(ctx) {
+    try {
+      // Ensure session exists
+      if (!ctx.session) {
+        ctx.session = {};
+      }
+
+      await ctx.reply(
+        "🔧 **Admin paneli**\n\n" + "Quyidagi funksiyalardan birini tanlang:",
+        adminMenu
+      );
+    } catch (error) {
+      console.error("Show admin menu error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Yangi test yaratish
+  static async startCreateTest(ctx) {
+    try {
+      ctx.session = {
+        creatingTest: true,
+        testData: {
+          title: "",
+          subject: "",
+          description: "",
+          timeLimit: 30,
+          questions: [],
+        },
+        currentStep: "title",
+      };
+
+      await ctx.reply(
+        "➕ **Yangi test yaratish**\n\n" + "Iltimos, test nomini kiriting:"
+      );
+    } catch (error) {
+      console.error("Start create test error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Test nomini qabul qilish
+  static async handleTestTitle(ctx) {
+    try {
+      const title = ctx.message.text.trim();
+
+      if (title.length < 3) {
+        await ctx.reply("Test nomi kamida 3 harf bo'lishi kerak:");
+        return;
+      }
+
+      ctx.session.testData.title = title;
+      ctx.session.currentStep = "subject";
+
+      // Mavjud fanlarni olish
+      const subjects = await Subject.find({ isActive: true }).sort({ name: 1 });
+
+      if (subjects.length === 0) {
+        await ctx.reply(
+          "Hali hech qanday fan qo'shilmagan. Avval fan qo'shing:\n\n" +
+            "📚 Fan qo'shish uchun \"📚 Fan qo'shish\" tugmasini bosing."
+        );
+        return;
+      }
+
+      // Fan tanlash tugmalarini yaratish
+      const subjectButtons = subjects.map((subject) => [
+        Markup.button.callback(
+          `📚 ${subject.name}`,
+          `select_subject_${subject._id}`
+        ),
+      ]);
+
+      subjectButtons.push([
+        Markup.button.callback("❌ Bekor qilish", "cancel_test_creation"),
+      ]);
+
+      const subjectMenu = Markup.inlineKeyboard(subjectButtons);
+
+      await ctx.reply(
+        "Test fani nomini tanlang:\n\n" + "Quyidagi fanlardan birini tanlang:",
+        { ...subjectMenu }
+      );
+    } catch (error) {
+      console.error("Handle test title error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Test fani qabul qilish
+  static async handleTestSubject(ctx) {
+    try {
+      const subject = ctx.message.text.trim();
+
+      // Fan nomini tozalash
+      const cleanSubject = subject.replace(/[^\w\s\u0400-\u04FF]/g, "").trim();
+
+      if (cleanSubject.length < 2) {
+        await ctx.reply("Fan nomi kamida 2 harf bo'lishi kerak:");
+        return;
+      }
+
+      ctx.session.testData.subject = cleanSubject;
+      console.log("Test fani saqlandi:", cleanSubject);
+      ctx.session.currentStep = "description";
+
+      await ctx.reply(
+        "Test haqida qisqacha ma'lumot kiriting (ixtiyoriy):\n\n" +
+          "Agar ma'lumot bermoqchi bo'lmasangiz \"O'tkazib yuborish\" deb yozing."
+      );
+    } catch (error) {
+      console.error("Handle test subject error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Test tavsifini qabul qilish
+  static async handleTestDescription(ctx) {
+    try {
+      const description = ctx.message.text.trim();
+
+      if (description !== "O'tkazib yuborish") {
+        ctx.session.testData.description = description;
+      }
+
+      ctx.session.currentStep = "timeLimit";
+
+      await ctx.reply(
+        "Test uchun vaqt chegarasini kiriting (daqiqada):\n\n" +
+          "Masalan: 30 (30 daqiqa)\n" +
+          "Standart: 30 daqiqa"
+      );
+    } catch (error) {
+      console.error("Handle test description error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Vaqt chegarasini qabul qilish
+  static async handleTimeLimit(ctx) {
+    try {
+      const timeLimit = parseInt(ctx.message.text);
+
+      if (isNaN(timeLimit) || timeLimit < 5 || timeLimit > 180) {
+        await ctx.reply(
+          "Vaqt chegarasi 5-180 daqiqa oralig'ida bo'lishi kerak:"
+        );
+        return;
+      }
+
+      ctx.session.testData.timeLimit = timeLimit;
+      ctx.session.currentStep = "questions";
+      ctx.session.questionIndex = 0;
+
+      await ctx.reply(
+        "✅ Test ma'lumotlari saqlandi!\n\n" +
+          "Endi savollarni kiritishni boshlaymiz.\n\n" +
+          "📝 **Eslatma:** Foydalanuvchilar savollarni qog'ozdan o'qadi.\n" +
+          "Siz faqat to'g'ri javobni belgilaysiz.\n\n" +
+          "Savol raqamini kiriting (masalan: 1):"
+      );
+    } catch (error) {
+      console.error("Handle time limit error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Savol raqamini qabul qilish
+  static async handleQuestionNumber(ctx) {
+    try {
+      const questionNumber = parseInt(ctx.message.text);
+
+      if (isNaN(questionNumber) || questionNumber < 1) {
+        await ctx.reply(
+          "Iltimos, to'g'ri savol raqamini kiriting (1, 2, 3...):"
+        );
+        return;
+      }
+
+      ctx.session.currentQuestionNumber = questionNumber;
+      ctx.session.currentStep = "correctAnswer";
+
+      const questionText =
+        `📝 **Savol ${questionNumber}**\n\n` +
+        "Qog'ozdagi savolni o'qing va to'g'ri javobni belgilang:\n\n" +
+        "A) Birinchi variant\n" +
+        "B) Ikkinchi variant\n" +
+        "C) Uchinchi variant\n" +
+        "D) To'rtinchi variant\n\n" +
+        "To'g'ri javobni tanlang:";
+
+      const answerButtons = Markup.inlineKeyboard([
+        [
+          Markup.button.callback("A", `answer_A_${questionNumber}`),
+          Markup.button.callback("B", `answer_B_${questionNumber}`),
+        ],
+        [
+          Markup.button.callback("C", `answer_C_${questionNumber}`),
+          Markup.button.callback("D", `answer_D_${questionNumber}`),
+        ],
+      ]);
+
+      await ctx.reply(questionText, answerButtons);
+    } catch (error) {
+      console.error("Handle question number error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // To'g'ri javobni qabul qilish (callback orqali)
+  static async handleCorrectAnswerCallback(ctx) {
+    try {
+      const callbackData = ctx.callbackQuery.data;
+      const [, answer, questionNumber] = callbackData.split("_");
+
+      // Javob raqamini aniqlash (A=0, B=1, C=2, D=3)
+      const correctAnswer =
+        answer === "A" ? 0 : answer === "B" ? 1 : answer === "C" ? 2 : 3;
+
+      // Savolni saqlash
+      const questionData = {
+        questionNumber: parseInt(questionNumber),
+        correctAnswer: correctAnswer,
+      };
+
+      ctx.session.testData.questions.push(questionData);
+      ctx.session.questionIndex++;
+
+      // Callback query ni javoblash
+      await ctx.answerCbQuery(`✅ Savol ${questionNumber} saqlandi!`);
+
+      const nextStepText =
+        `✅ Savol ${questionNumber} saqlandi!\n\n` +
+        "Keyingi savol raqamini kiriting yoki testni tugatish uchun tugmani bosing:";
+
+      const nextStepButtons = Markup.inlineKeyboard([
+        [Markup.button.callback("🏁 Testni tugatish", "finish_test")],
+      ]);
+
+      await ctx.reply(nextStepText, nextStepButtons);
+
+      ctx.session.currentStep = "nextQuestion";
+    } catch (error) {
+      console.error("Handle correct answer callback error:", error);
+      await ctx.answerCbQuery("Xatolik yuz berdi!");
+    }
+  }
+
+  // Testni tugatish
+  static async finishTestCreation(ctx) {
+    try {
+      const testData = ctx.session.testData;
+      const user = ctx.state.user;
+
+      if (testData.questions.length < 1) {
+        await ctx.reply(
+          "Testda kamida 1 savol bo'lishi kerak. Savol raqamini kiriting:"
+        );
+        ctx.session.currentStep = "questions";
+        return;
+      }
+
+      // Testni saqlash
+      console.log("Test ma'lumotlari:", testData);
+      const test = new Test({
+        ...testData,
+        createdBy: user._id,
+      });
+
+      await test.save();
+      console.log("Test saqlandi:", test._id);
+
+      // Session tozalash
+      ctx.session = {};
+
+      await ctx.reply(
+        `🎉 **Test muvaffaqiyatli yaratildi!**\n\n` +
+          `📝 **Nomi:** ${test.title}\n` +
+          `📚 **Fan:** ${test.subject}\n` +
+          `❓ **Savollar:** ${test.questions.length}\n` +
+          `⏱ **Vaqt:** ${test.timeLimit} daqiqa\n\n` +
+          "Test foydalanuvchilar uchun mavjud!",
+        adminMenu
+      );
+    } catch (error) {
+      console.error("Finish test creation error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Testlar ro'yxatini ko'rsatish
+  static async showTestsList(ctx) {
+    try {
+      const tests = await Test.find().sort({ createdAt: -1 });
+
+      console.log(
+        "Barcha testlar:",
+        tests.map((t) => ({
+          title: t.title,
+          subject: t.subject,
+          isActive: t.isActive,
+        }))
+      );
+
+      if (tests.length === 0) {
+        await ctx.reply("Hali hech qanday test yaratilmagan.");
+        return;
+      }
+
+      let testsText = "📋 **Mavjud testlar:**\n\n";
+
+      tests.forEach((test, index) => {
+        const status = test.isActive ? "✅" : "❌";
+        testsText += `${status} **${index + 1}. ${test.title}**\n`;
+        testsText += `📚 ${test.subject}\n`;
+        testsText += `❓ ${test.questions.length} savol\n`;
+        testsText += `⏱ ${test.timeLimit} daqiqa\n`;
+        testsText += `📅 ${test.createdAt.toLocaleDateString("uz-UZ")}\n\n`;
+      });
+
+      await ctx.reply(testsText, { parse_mode: "Markdown" });
+    } catch (error) {
+      console.error("Show tests list error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Fanlar ro'yxatini ko'rsatish
+  static async showSubjectsList(ctx) {
+    try {
+      console.log("showSubjectsList chaqirildi");
+
+      const subjects = await Subject.find().sort({ name: 1 });
+      console.log("Bazadan olingan fanlar soni:", subjects.length);
+
+      console.log(
+        "Barcha fanlar:",
+        subjects.map((s) => ({
+          name: s.name,
+          isActive: s.isActive,
+          id: s._id,
+        }))
+      );
+
+      if (subjects.length === 0) {
+        console.log("Hech qanday fan topilmadi");
+        await ctx.reply("Hali hech qanday fan qo'shilmagan.");
+        return;
+      }
+
+      // Store subjects in session for deletion
+      if (!ctx.session) {
+        ctx.session = {};
+      }
+      ctx.session.availableSubjects = subjects;
+
+      // Send header message
+      await ctx.reply("📚 **Mavjud fanlar:**", { parse_mode: "Markdown" });
+
+      // Send each subject as a separate message with its own delete button
+      for (let i = 0; i < subjects.length; i++) {
+        const subject = subjects[i];
+        const status = subject.isActive ? "✅" : "❌";
+
+        let subjectText = `${status} **${i + 1}. ${subject.name}**\n`;
+        if (subject.description) {
+          subjectText += `📝 ${subject.description}\n`;
+        }
+        subjectText += `📅 ${subject.createdAt.toLocaleDateString("uz-UZ")}`;
+
+        // Create delete button for this specific subject
+        const deleteButton = Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              `🗑️ ${subject.name} ni o'chirish`,
+              `delete_subject_${subject._id}`
+            ),
+          ],
+        ]);
+
+        await ctx.reply(subjectText, {
+          parse_mode: "Markdown",
+          ...deleteButton,
+        });
+      }
+
+      // Send back button as separate message
+      const backButton = Markup.inlineKeyboard([
+        [Markup.button.callback("🔙 Orqaga", "back_to_admin")],
+      ]);
+
+      await ctx.reply("Boshqa amallar uchun:", { ...backButton });
+      console.log("Fanlar ro'yxati muvaffaqiyatli yuborildi");
+    } catch (error) {
+      console.error("Show subjects list error:", error);
+      await ctx.reply(
+        "Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.",
+        adminMenu
+      );
+    }
+  }
+
+  // Foydalanuvchilar ro'yxatini ko'rsatish
+  static async showUsers(ctx) {
+    try {
+      const users = await User.find().sort({ createdAt: -1 });
+
+      if (users.length === 0) {
+        await ctx.reply("Hali hech qanday foydalanuvchi ro'yxatdan o'tmagan.");
+        return;
+      }
+
+      let usersText = "👥 **Foydalanuvchilar:**\n\n";
+
+      users.slice(0, 10).forEach((user, index) => {
+        usersText += `**${index + 1}. ${user.firstName} ${user.lastName}**\n`;
+        usersText += `📱 ${user.phoneNumber}\n`;
+        usersText += `📊 ${user.testResults.length} test yechgan\n`;
+        usersText += `📅 ${user.createdAt.toLocaleDateString("uz-UZ")}\n\n`;
+      });
+
+      if (users.length > 10) {
+        usersText += `... va yana ${users.length - 10} foydalanuvchi`;
+      }
+
+      await ctx.reply(usersText, { parse_mode: "Markdown" });
+    } catch (error) {
+      console.error("Show users error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Umumiy statistika
+  static async showStatistics(ctx) {
+    try {
+      const totalUsers = await User.countDocuments();
+      const totalTests = await Test.countDocuments();
+      const activeTests = await Test.countDocuments({ isActive: true });
+      const totalResults = await User.aggregate([
+        { $unwind: "$testResults" },
+        { $count: "total" },
+      ]);
+
+      const totalResultsCount =
+        totalResults.length > 0 ? totalResults[0].total : 0;
+
+      const statsText =
+        "📊 **Umumiy statistika:**\n\n" +
+        `👥 **Foydalanuvchilar:** ${totalUsers}\n` +
+        `📝 **Jami testlar:** ${totalTests}\n` +
+        `✅ **Faol testlar:** ${activeTests}\n` +
+        `📊 **Yechilgan testlar:** ${totalResultsCount}\n\n` +
+        `📈 **O'rtacha:** ${
+          totalUsers > 0 ? Math.round(totalResultsCount / totalUsers) : 0
+        } test/foydalanuvchi`;
+
+      await ctx.reply(statsText, { parse_mode: "Markdown" });
+    } catch (error) {
+      console.error("Show statistics error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Fan qo'shish
+  static async startAddSubject(ctx) {
+    try {
+      if (!ctx.session) {
+        ctx.session = {};
+      }
+
+      ctx.session.addingSubject = true;
+      ctx.session.currentStep = "subjectName";
+
+      await ctx.reply(
+        "📚 **Yangi fan qo'shish**\n\n" +
+          "Fan nomini kiriting (masalan: Matematika, Fizika, Kimyo):"
+      );
+    } catch (error) {
+      console.error("Start add subject error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Fan nomini qabul qilish
+  static async handleSubjectName(ctx) {
+    try {
+      const subjectName = ctx.message.text.trim();
+
+      // Fan nomini tozalash
+      const cleanSubjectName = subjectName
+        .replace(/[^\w\s\u0400-\u04FF]/g, "")
+        .trim();
+
+      if (cleanSubjectName.length < 2) {
+        await ctx.reply("Fan nomi kamida 2 harf bo'lishi kerak:");
+        return;
+      }
+
+      // Fan mavjudligini tekshirish
+      const existingSubject = await Subject.findOne({ name: cleanSubjectName });
+      if (existingSubject) {
+        await ctx.reply(
+          `❌ **"${cleanSubjectName}"** fan allaqachon mavjud!\n\n` +
+            "Boshqa fan nomi kiriting yoki mavjud fanni ishlatish uchun test yarating.",
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      // Fan ma'lumotlarini saqlash
+      ctx.session.newSubject = cleanSubjectName;
+
+      const confirmText = `✅ **"${cleanSubjectName}"** fanini qo'shish uchun tasdiqlang`;
+
+      const confirmButtons = Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "✅ Tasdiqlash",
+            `confirm_subject_${cleanSubjectName}`
+          ),
+        ],
+        [Markup.button.callback("❌ Bekor qilish", "cancel_subject")],
+      ]);
+
+      await ctx.reply(confirmText, {
+        parse_mode: "Markdown",
+        ...confirmButtons,
+      });
+    } catch (error) {
+      console.error("Handle subject name error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Fan tasdiqlash
+  static async handleSubjectConfirm(ctx) {
+    try {
+      const callbackData = ctx.callbackQuery.data;
+      const subjectName = callbackData.replace("confirm_subject_", "");
+      const user = ctx.state.user;
+
+      // Callback query ni javoblash
+      await ctx.answerCbQuery(`✅ "${subjectName}" fan tasdiqlandi!`);
+
+      // Yangi fan yaratish
+      const newSubject = new Subject({
+        name: subjectName,
+        description: "",
+        createdBy: user._id,
+      });
+
+      await newSubject.save();
+      console.log("Yangi fan yaratildi:", {
+        name: subjectName,
+        id: newSubject._id,
+      });
+
+      // Session tozalash
+      ctx.session = {};
+
+      const successText =
+        `✅ **"${subjectName}"** fan muvaffaqiyatli qo'shildi!\n\n` +
+        "Endi bu fan bo'yicha test yaratishingiz mumkin.";
+
+      const testButton = Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "➕ Yangi test qo'shish",
+            "create_test_after_subject"
+          ),
+        ],
+      ]);
+
+      await ctx.reply(successText, {
+        parse_mode: "Markdown",
+        ...testButton,
+      });
+    } catch (error) {
+      console.error("Handle subject confirm error:", error);
+      await ctx.answerCbQuery("Xatolik yuz berdi!");
+    }
+  }
+
+  // Fan bekor qilish
+  static async handleSubjectCancel(ctx) {
+    try {
+      // Callback query ni javoblash
+      await ctx.answerCbQuery("❌ Fan qo'shish bekor qilindi!");
+
+      // Session tozalash
+      ctx.session = {};
+
+      await ctx.reply(
+        "❌ Fan qo'shish bekor qilindi.\n\n" +
+          "Yangi fan qo'shish uchun \"📚 Fan qo'shish\" tugmasini bosing.",
+        adminMenu
+      );
+    } catch (error) {
+      console.error("Handle subject cancel error:", error);
+      await ctx.answerCbQuery("Xatolik yuz berdi!");
+    }
+  }
+
+  // Fan o'chirish
+  static async handleSubjectDelete(ctx) {
+    try {
+      // Ensure session exists
+      if (!ctx.session) {
+        ctx.session = {};
+      }
+
+      const callbackData = ctx.callbackQuery.data;
+      const subjectId = callbackData.replace("delete_subject_", "");
+
+      // Fan ma'lumotlarini olish
+      const subject = await Subject.findById(subjectId);
+
+      if (!subject) {
+        await ctx.answerCbQuery("❌ Fan topilmadi!");
+        return;
+      }
+
+      // Bu fan bo'yicha testlar mavjudligini tekshirish
+      const testsInSubject = await Test.find({ subject: subject.name });
+
+      if (testsInSubject.length > 0) {
+        await ctx.answerCbQuery(
+          "❌ Bu fan bo'yicha testlar mavjud! Avval testlarni o'chiring."
+        );
+        return;
+      }
+
+      // Fan o'chirish
+      await Subject.findByIdAndDelete(subjectId);
+
+      // Callback query ni javoblash
+      await ctx.answerCbQuery(`✅ "${subject.name}" fan o'chirildi!`);
+
+      // Yangilangan fanlar ro'yxatini ko'rsatish
+      await AdminController.showSubjectsList(ctx);
+    } catch (error) {
+      console.error("Handle subject delete error:", error);
+      await ctx.answerCbQuery("❌ Fan o'chirishda xatolik yuz berdi!");
+    }
+  }
+
+  // Test yaratish jarayonida fan tanlash
+  static async handleSubjectSelection(ctx) {
+    try {
+      const callbackData = ctx.callbackQuery.data;
+      const subjectId = callbackData.replace("select_subject_", "");
+
+      // Fan ma'lumotlarini olish
+      const subject = await Subject.findById(subjectId);
+
+      if (!subject) {
+        await ctx.answerCbQuery("❌ Fan topilmadi!");
+        return;
+      }
+
+      // Test ma'lumotlariga fan nomini saqlash
+      ctx.session.testData.subject = subject.name;
+      ctx.session.currentStep = "description";
+
+      // Callback query ni javoblash
+      await ctx.answerCbQuery(`✅ "${subject.name}" fan tanlandi!`);
+
+      await ctx.reply(
+        "Test haqida qisqacha ma'lumot kiriting (ixtiyoriy):\n\n" +
+          "Agar ma'lumot bermoqchi bo'lmasangiz \"O'tkazib yuborish\" deb yozing."
+      );
+    } catch (error) {
+      console.error("Handle subject selection error:", error);
+      await ctx.answerCbQuery("❌ Fan tanlashda xatolik yuz berdi!");
+    }
+  }
+
+  // Test yaratishni bekor qilish
+  static async cancelTestCreation(ctx) {
+    try {
+      // Callback query ni javoblash
+      await ctx.answerCbQuery("❌ Test yaratish bekor qilindi!");
+
+      // Session tozalash
+      ctx.session = {};
+
+      await ctx.reply(
+        "❌ Test yaratish bekor qilindi.\n\n" +
+          'Yangi test yaratish uchun "➕ Yangi test qo\'shish" tugmasini bosing.',
+        adminMenu
+      );
+    } catch (error) {
+      console.error("Cancel test creation error:", error);
+      await ctx.answerCbQuery("❌ Xatolik yuz berdi!");
+    }
+  }
+
+  // Test natijalarini PDF formatda yuklab olish
+  static async downloadTestResultsPDF(ctx) {
+    try {
+      // Barcha test natijalarini olish
+      const users = await User.find({
+        "testResults.0": { $exists: true },
+      }).populate("testResults.testId");
+
+      if (users.length === 0) {
+        await ctx.reply("Hali hech qanday test natijasi mavjud emas.");
+        return;
+      }
+
+      // Test natijalarini formatlash
+      const testResults = [];
+      let testInfo = { title: "Barcha testlar", subject: "Umumiy" };
+
+      users.forEach((user) => {
+        user.testResults.forEach((result) => {
+          if (result.testId) {
+            const test = result.testId;
+            testInfo = { title: test.title, subject: test.subject };
+
+            const percentage =
+              result.percentage ||
+              Math.round((result.score / result.totalQuestions) * 100);
+
+            // Baholash tizimi
+            const getGrade = (percentage) => {
+              if (percentage >= 70) return "A+";
+              if (percentage >= 65) return "A";
+              if (percentage >= 60) return "B+";
+              if (percentage >= 55) return "B";
+              if (percentage >= 50) return "C+";
+              if (percentage >= 46) return "C";
+              return "F";
+            };
+
+            testResults.push({
+              userName: `${user.firstName} ${user.lastName}`,
+              correctAnswers: result.score,
+              totalQuestions: result.totalQuestions,
+              score: percentage,
+              grade: result.grade || getGrade(percentage),
+              completedAt: result.completedAt,
+            });
+          }
+        });
+      });
+
+      // Natijalarni ball bo'yicha saralash (yuqoridan pastga)
+      testResults.sort((a, b) => b.score - a.score);
+
+      // PDF yaratish
+      await ctx.reply("📊 PDF yaratilmoqda...");
+
+      const { filepath, filename } = await PDFGenerator.generateTestResultsPDF(
+        testResults,
+        testInfo
+      );
+
+      // PDF faylni yuborish
+      await ctx.replyWithDocument(
+        { source: filepath },
+        {
+          caption:
+            `📊 **Test natijalari**\n\n` +
+            `📝 Test: ${testInfo.title}\n` +
+            `📚 Fan: ${testInfo.subject}\n` +
+            `👥 Jami talabgorlar: ${testResults.length}\n` +
+            `📅 Sana: ${new Date().toLocaleDateString("uz-UZ")}`,
+        }
+      );
+
+      // Faylni o'chirish
+      setTimeout(() => {
+        if (fs.existsSync(filepath)) {
+          fs.unlinkSync(filepath);
+        }
+      }, 60000); // 1 daqiqadan keyin o'chirish
+    } catch (error) {
+      console.error("Download PDF error:", error);
+      await ctx.reply(
+        "PDF yaratishda xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring."
+      );
+    }
+  }
+}
+
+module.exports = AdminController;
