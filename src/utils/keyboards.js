@@ -65,7 +65,6 @@ const answerKeyboard = Markup.keyboard([
 // Test tugagandan keyin
 const afterTestMenu = Markup.keyboard([
   ["📊 Natijani ko'rish"],
-  ["🔄 Boshqa test"],
   ["🏠 Bosh menyu"],
 ]).resize();
 

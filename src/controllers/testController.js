@@ -1,6 +1,7 @@
 const Test = require("../models/Test");
 const User = require("../models/User");
 const Subject = require("../models/Subject");
+const RaschModel = require("../utils/raschModel");
 const {
   staticSubjectMenu,
   createSubjectMenu,
@@ -165,6 +166,34 @@ class TestController {
     }
   }
 
+  // Session state validation method
+  static validateSessionState(ctx) {
+    if (!ctx.session) {
+      ctx.session = {};
+      console.log("Session created in validation");
+    }
+
+    if (!ctx.session.currentTest) {
+      console.log("No current test in session");
+      return false;
+    }
+
+    if (!Array.isArray(ctx.session.userAnswers)) {
+      ctx.session.userAnswers = [];
+      console.log("userAnswers converted to array in validation");
+    }
+
+    if (
+      ctx.session.currentQuestionIndex === undefined ||
+      ctx.session.currentQuestionIndex === null
+    ) {
+      ctx.session.currentQuestionIndex = 0;
+      console.log("currentQuestionIndex reset to 0 in validation");
+    }
+
+    return true;
+  }
+
   // Testni boshlash
   static async startTest(ctx) {
     try {
@@ -289,13 +318,13 @@ class TestController {
   // Javobni qabul qilish
   static async handleAnswer(ctx) {
     try {
-      if (!ctx.session) {
-        ctx.session = {};
-      }
+      console.log("handleAnswer chaqirildi, text:", ctx.message.text);
 
-      // Validate that we're in a test
-      if (!ctx.session.currentTest) {
-        console.log("No current test in session, ignoring answer");
+      // Validate session state
+      if (!this.validateSessionState(ctx)) {
+        await ctx.reply(
+          "Test ma'lumotlari topilmadi. Iltimos, qaytadan test tanlang."
+        );
         return;
       }
 
@@ -313,6 +342,13 @@ class TestController {
       const answer = ctx.message.text.trim().toUpperCase();
       const test = ctx.session.currentTest;
       const currentIndex = ctx.session.currentQuestionIndex;
+
+      console.log("Answer processing:", {
+        answer: answer,
+        currentIndex: currentIndex,
+        totalQuestions: test.questions.length,
+        userAnswersLength: ctx.session.userAnswers.length,
+      });
 
       // Validate current question index
       if (
@@ -336,28 +372,60 @@ class TestController {
       else if (answer === "D") selectedAnswer = 3;
       else if (answer === "⏭️ O'tkazib yuborish") selectedAnswer = -1;
 
-      // Initialize userAnswers array if it doesn't exist
-      if (!ctx.session.userAnswers) {
-        ctx.session.userAnswers = [];
+      console.log("Answer mapping:", { answer, selectedAnswer });
+
+      // Validate that we got a valid answer
+      if (selectedAnswer === -1 && answer !== "⏭️ O'tkazib yuborish") {
+        console.log("Invalid answer received:", answer);
+        await ctx.reply(
+          "Noto'g'ri javob tanlandi. Iltimos, A, B, C yoki D tugmalaridan birini tanlang."
+        );
+        return;
       }
 
       // Check if this question was already answered
       if (ctx.session.userAnswers[currentIndex] !== undefined) {
         console.log("Question already answered, ignoring duplicate answer");
+        await ctx.reply(
+          "Bu savol allaqachon javob berilgan. Keyingi savolga o'ting."
+        );
         return;
       }
 
       // Javobni saqlash
       ctx.session.userAnswers[currentIndex] = selectedAnswer;
 
+      // Force session save
+      ctx.session = { ...ctx.session };
+
+      console.log("Answer saved:", {
+        questionIndex: currentIndex,
+        selectedAnswer: selectedAnswer,
+        userAnswers: ctx.session.userAnswers,
+        userAnswersLength: ctx.session.userAnswers.length,
+      });
+
+      // Confirm answer to user
+      const answerLabels = ["A", "B", "C", "D"];
+      const answerText =
+        selectedAnswer >= 0
+          ? answerLabels[selectedAnswer]
+          : "O'tkazib yuborildi";
+      await ctx.reply(`✅ Javob saqlandi: ${answerText}`);
+
       // Keyingi savolga o'tish
       const nextIndex = currentIndex + 1;
 
       if (nextIndex < test.questions.length) {
         ctx.session.currentQuestionIndex = nextIndex;
+        console.log("Moving to next question:", nextIndex);
+
+        // Small delay to ensure session is saved
+        await new Promise((resolve) => setTimeout(resolve, 100));
         await this.beginTest(ctx);
       } else {
         // Test tugadi
+        console.log("Test finished, calling finishTest");
         await this.finishTest(ctx);
       }
     } catch (error) {
@@ -377,6 +445,16 @@ class TestController {
       const userAnswers = ctx.session.userAnswers || [];
       const user = ctx.state.user;
 
+      console.log("finishTest - Session state:", {
+        userAnswers: userAnswers,
+        userAnswersLength: userAnswers.length,
+        userAnswersKeys: Object.keys(userAnswers),
+        testQuestionsCount: test.questions.length,
+        userAnswersType: typeof userAnswers,
+        userAnswersIsArray: Array.isArray(userAnswers),
+        userAnswersStringified: JSON.stringify(userAnswers),
+      });
+
       // Validate test data
       if (!test || !test.questions) {
         console.log("Invalid test data in finishTest");
@@ -391,8 +469,30 @@ class TestController {
       const results = [];
 
       test.questions.forEach((question, index) => {
-        const userAnswer = userAnswers[index] || -1;
+        // Ensure userAnswers is properly accessed
+        let userAnswer = -1;
+
+        if (Array.isArray(userAnswers) && userAnswers[index] !== undefined) {
+          userAnswer = userAnswers[index];
+        } else if (
+          typeof userAnswers === "object" &&
+          userAnswers[index] !== undefined
+        ) {
+          userAnswer = userAnswers[index];
+        }
+
         const isCorrect = userAnswer === question.correctAnswer;
+
+        console.log(`Question ${index + 1}:`, {
+          questionNumber: question.questionNumber,
+          userAnswer: userAnswer,
+          correctAnswer: question.correctAnswer,
+          isCorrect: isCorrect,
+          userAnswersArray: userAnswers,
+          userAnswersIndex: userAnswers[index],
+          userAnswersType: typeof userAnswers,
+          userAnswersIsArray: Array.isArray(userAnswers),
+        });
 
         if (isCorrect) correctAnswers++;
 
@@ -406,7 +506,21 @@ class TestController {
         });
       });
 
-      const score = Math.round((correctAnswers / test.questions.length) * 100);
+      // Rash modeli bo'yicha ball hisoblash
+      const questionDifficulty = test.questions.map((q) => q.difficulty || 0.5);
+
+      const raschResult = RaschModel.calculateRaschScore(
+        correctAnswers,
+        test.questions.length,
+        questionDifficulty,
+        userAnswers,
+        test.questions
+      );
+
+      const score = raschResult.adjustedScore; // Rash modeli bo'yicha tuzatilgan ball
+      const rawScore = Math.round(
+        (correctAnswers / test.questions.length) * 100
+      ); // Oddiy ball
 
       // Baholash tizimi
       const getGrade = (percentage) => {
@@ -433,6 +547,10 @@ class TestController {
         score: correctAnswers,
         totalQuestions: test.questions.length,
         percentage: score,
+        rawPercentage: rawScore,
+        raschScore: raschResult.raschScore,
+        adjustedScore: raschResult.adjustedScore,
+        userAbility: raschResult.userAbility,
         grade: gradeInfo.grade,
         completedAt: new Date(),
       };
@@ -452,11 +570,15 @@ class TestController {
         `🎉 **Test tugadi!**\n\n` +
         `📊 **Natijalar:**\n` +
         `✅ To'g'ri javoblar: ${correctAnswers}/${test.questions.length}\n` +
-        `📈 Ball: ${score}\n` +
+        `📈 Oddiy ball: ${rawScore}%\n` +
+        `🎯 Rash modeli balli: ${score}%\n` +
+        `🧠 Foydalanuvchi qobiliyati: ${raschResult.userAbility.toFixed(2)}\n` +
         `🏆 Baho: **${gradeInfo.grade}** (${gradeInfo.description})\n\n` +
         `📝 **Test:** ${test.title}\n` +
         `📚 **Fan:** ${test.subject}\n` +
-        `⏱ **Vaqt:** ${test.timeLimit} daqiqa`;
+        `⏱ **Vaqt:** ${test.timeLimit} daqiqa\n\n` +
+        `ℹ️ **Rash modeli:** Qiyin savollarga ko'proq ball, oson savollarga kam ball beriladi.\n\n` +
+        `📋 Keyingi amalni tanlang:`;
 
       ctx.session.testResults = results;
 

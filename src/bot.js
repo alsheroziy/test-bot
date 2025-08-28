@@ -72,6 +72,12 @@ bot.on("text", async (ctx) => {
 
   // Test taking flow
   if (session?.currentTest) {
+    console.log("Test flow triggered, session state:", {
+      hasCurrentTest: !!session.currentTest,
+      currentQuestionIndex: session.currentQuestionIndex,
+      hasUserAnswers: !!session.userAnswers,
+      userAnswersLength: session.userAnswers ? session.userAnswers.length : 0,
+    });
     await handleTestFlow(ctx);
     return;
   }
@@ -93,7 +99,12 @@ bot.on("text", async (ctx) => {
       break;
 
     case "🔙 Asosiy menyu":
-      await ctx.reply("Asosiy menyu:", mainMenu);
+      // Admin panelida asosiy menyuga qaytish
+      if (ctx.state.user && ctx.state.user.isAdmin) {
+        await AdminController.showAdminMenu(ctx);
+      } else {
+        await ctx.reply("Asosiy menyu:", mainMenu);
+      }
       break;
 
     case "🔙 Orqaga":
@@ -137,10 +148,6 @@ bot.on("text", async (ctx) => {
       await TestController.showDetailedResults(ctx);
       break;
 
-    case "🔄 Boshqa test":
-      await TestController.showSubjects(ctx);
-      break;
-
     case "📊 Natijani ko'rish":
       await TestController.showDetailedResults(ctx);
       break;
@@ -158,11 +165,16 @@ bot.on("text", async (ctx) => {
         return;
       }
 
+      // Admin test creation - bu eng yuqori darajada tekshirilishi kerak
+      if (session?.creatingTest) {
+        await handleAdminTestCreation(ctx);
+        return;
+      }
+
       // Subject selection - dinamik fan tugmalari
       if (
         session?.availableTests === undefined &&
         !session?.currentTest &&
-        !session?.creatingTest &&
         !session?.addingSubject
       ) {
         // Bu fan tanlash bo'lishi mumkin
@@ -258,12 +270,16 @@ async function handleAdminTestCreation(ctx) {
 // Test flow handler
 async function handleTestFlow(ctx) {
   const text = ctx.message.text;
+  console.log("handleTestFlow chaqirildi, text:", text);
 
   if (text === "✅ Testni boshlash") {
+    console.log("Testni boshlash tugmasi bosildi");
     await TestController.beginTest(ctx);
   } else if (["A", "B", "C", "D", "⏭️ O'tkazib yuborish"].includes(text)) {
+    console.log("Javob tugmasi bosildi:", text);
     await TestController.handleAnswer(ctx);
   } else {
+    console.log("Noto'g'ri tugma bosildi:", text);
     await ctx.reply("Iltimos, tugmalardan birini tanlang.");
   }
 }

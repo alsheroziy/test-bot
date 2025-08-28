@@ -69,15 +69,15 @@ class PDFGenerator {
 
         // Table headers
         const tableTop = doc.y;
-        const colWidths = [40, 200, 80, 60, 60];
-        const colX = [50, 90, 290, 370, 430];
+        const colWidths = [40, 120, 50, 60, 60, 60, 60];
+        const colX = [50, 90, 210, 260, 320, 380, 440];
 
         // Draw table borders
         doc.rect(50, tableTop, 440, 25).stroke();
 
         // Header text
         doc
-          .fontSize(10)
+          .fontSize(9)
           .font("Times-Bold")
           .text("№", colX[0], tableTop + 5, {
             width: colWidths[0],
@@ -87,16 +87,24 @@ class PDFGenerator {
             width: colWidths[1],
             align: "center",
           })
-          .text("To'g'ri javoblar soni", colX[2], tableTop + 5, {
+          .text("Testlar", colX[2], tableTop + 5, {
             width: colWidths[2],
             align: "center",
           })
-          .text("Ball", colX[3], tableTop + 5, {
+          .text("O'rtacha", colX[3], tableTop + 5, {
             width: colWidths[3],
             align: "center",
           })
-          .text("Daraja", colX[4], tableTop + 5, {
+          .text("Eng yaxshi", colX[4], tableTop + 5, {
             width: colWidths[4],
+            align: "center",
+          })
+          .text("Qobiliyat", colX[5], tableTop + 5, {
+            width: colWidths[5],
+            align: "center",
+          })
+          .text("Daraja", colX[6], tableTop + 5, {
+            width: colWidths[6],
             align: "center",
           });
 
@@ -116,6 +124,14 @@ class PDFGenerator {
         doc
           .moveTo(colX[4], tableTop)
           .lineTo(colX[4], tableTop + 25)
+          .stroke();
+        doc
+          .moveTo(colX[5], tableTop)
+          .lineTo(colX[5], tableTop + 25)
+          .stroke();
+        doc
+          .moveTo(colX[6], tableTop)
+          .lineTo(colX[6], tableTop + 25)
           .stroke();
 
         // Data rows
@@ -145,16 +161,29 @@ class PDFGenerator {
             align: "left",
           });
 
-          doc.text(result.correctAnswers.toString(), colX[2], currentY + 5, {
+          doc.text(result.testsTaken.toString(), colX[2], currentY + 5, {
             width: colWidths[2],
             align: "center",
           });
-          doc.text(result.score.toString(), colX[3], currentY + 5, {
+          doc.text(result.averageScore.toString(), colX[3], currentY + 5, {
             width: colWidths[3],
             align: "center",
           });
-          doc.text(result.grade, colX[4], currentY + 5, {
+          doc.text(result.bestScore.toString(), colX[4], currentY + 5, {
             width: colWidths[4],
+            align: "center",
+          });
+          doc.text(
+            (result.averageAbility || 0).toFixed(2),
+            colX[5],
+            currentY + 5,
+            {
+              width: colWidths[5],
+              align: "center",
+            }
+          );
+          doc.text(result.bestGrade, colX[6], currentY + 5, {
+            width: colWidths[6],
             align: "center",
           });
 
@@ -175,6 +204,14 @@ class PDFGenerator {
             .moveTo(colX[4], currentY)
             .lineTo(colX[4], currentY + 20)
             .stroke();
+          doc
+            .moveTo(colX[5], currentY)
+            .lineTo(colX[5], currentY + 20)
+            .stroke();
+          doc
+            .moveTo(colX[6], currentY)
+            .lineTo(colX[6], currentY + 20)
+            .stroke();
 
           currentY += 20;
         });
@@ -184,7 +221,7 @@ class PDFGenerator {
         doc
           .fontSize(10)
           .font("Times-Roman")
-          .text(`Jami talabgorlar soni: ${testResults.length}`, {
+          .text(`Jami foydalanuvchilar soni: ${testResults.length}`, {
             align: "right",
           });
 

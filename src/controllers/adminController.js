@@ -1,6 +1,7 @@
 const Test = require("../models/Test");
 const User = require("../models/User");
 const Subject = require("../models/Subject");
+const RaschModel = require("../utils/raschModel");
 const { adminMenu, mainMenu } = require("../utils/keyboards");
 const { Markup } = require("telegraf");
 const PDFGenerator = require("../utils/pdfGenerator");
@@ -28,6 +29,7 @@ class AdminController {
   // Yangi test yaratish
   static async startCreateTest(ctx) {
     try {
+      // Session ni tozalash va yangi test yaratish jarayonini boshlash
       ctx.session = {
         creatingTest: true,
         testData: {
@@ -39,6 +41,11 @@ class AdminController {
         },
         currentStep: "title",
       };
+
+      console.log("Test yaratish jarayoni boshladi. Session state:", {
+        creatingTest: ctx.session.creatingTest,
+        currentStep: ctx.session.currentStep,
+      });
 
       await ctx.reply(
         "➕ **Yangi test yaratish**\n\n" + "Iltimos, test nomini kiriting:"
@@ -54,6 +61,13 @@ class AdminController {
     try {
       const title = ctx.message.text.trim();
 
+      console.log("Test nomi qabul qilindi:", title);
+      console.log("Joriy session state:", {
+        creatingTest: ctx.session.creatingTest,
+        currentStep: ctx.session.currentStep,
+        testData: ctx.session.testData,
+      });
+
       if (title.length < 3) {
         await ctx.reply("Test nomi kamida 3 harf bo'lishi kerak:");
         return;
@@ -61,6 +75,12 @@ class AdminController {
 
       ctx.session.testData.title = title;
       ctx.session.currentStep = "subject";
+
+      console.log("Test nomi saqlandi. Yangi session state:", {
+        creatingTest: ctx.session.creatingTest,
+        currentStep: ctx.session.currentStep,
+        testData: ctx.session.testData,
+      });
 
       // Mavjud fanlarni olish
       const subjects = await Subject.find({ isActive: true }).sort({ name: 1 });
@@ -718,8 +738,9 @@ class AdminController {
         return;
       }
 
-      // Test natijalarini formatlash
+      // Test natijalarini formatlash - foydalanuvchilar bo'yicha guruhlash
       const testResults = [];
+      const userResults = new Map(); // Foydalanuvchilar bo'yicha guruhlash uchun
       let testInfo = { title: "Barcha testlar", subject: "Umumiy" };
 
       users.forEach((user) => {
@@ -728,7 +749,9 @@ class AdminController {
             const test = result.testId;
             testInfo = { title: test.title, subject: test.subject };
 
+            // Rash modeli bo'yicha ball hisoblash
             const percentage =
+              result.adjustedScore ||
               result.percentage ||
               Math.round((result.score / result.totalQuestions) * 100);
 
@@ -743,20 +766,70 @@ class AdminController {
               return "F";
             };
 
-            testResults.push({
-              userName: `${user.firstName} ${user.lastName}`,
-              correctAnswers: result.score,
-              totalQuestions: result.totalQuestions,
-              score: percentage,
-              grade: result.grade || getGrade(percentage),
-              completedAt: result.completedAt,
-            });
+            const userName = `${user.firstName} ${user.lastName}`;
+
+            // Foydalanuvchi bo'yicha guruhlash
+            if (!userResults.has(userName)) {
+              userResults.set(userName, {
+                userName: userName,
+                testsTaken: 0,
+                totalScore: 0,
+                bestScore: 0,
+                bestGrade: "F",
+                lastTestDate: null,
+                averageScore: 0,
+                totalAbility: 0,
+                averageAbility: 0,
+              });
+            }
+
+            const userData = userResults.get(userName);
+            userData.testsTaken++;
+            userData.totalScore += percentage;
+            userData.averageScore = Math.round(
+              userData.totalScore / userData.testsTaken
+            );
+
+            // Rash modeli qobiliyatini hisoblash
+            const userAbility = result.userAbility || 0;
+            if (!userData.totalAbility) userData.totalAbility = 0;
+            userData.totalAbility += userAbility;
+            userData.averageAbility =
+              Math.round((userData.totalAbility / userData.testsTaken) * 100) /
+              100;
+
+            // Eng yaxshi natijani saqlash
+            if (percentage > userData.bestScore) {
+              userData.bestScore = percentage;
+              userData.bestGrade = result.grade || getGrade(percentage);
+            }
+
+            // Eng so'nggi test sanasini saqlash
+            if (
+              !userData.lastTestDate ||
+              result.completedAt > userData.lastTestDate
+            ) {
+              userData.lastTestDate = result.completedAt;
+            }
           }
         });
       });
 
-      // Natijalarni ball bo'yicha saralash (yuqoridan pastga)
-      testResults.sort((a, b) => b.score - a.score);
+      // Guruhlangan natijalarni array ga o'tkazish
+      userResults.forEach((userData) => {
+        testResults.push({
+          userName: userData.userName,
+          testsTaken: userData.testsTaken,
+          averageScore: userData.averageScore,
+          bestScore: userData.bestScore,
+          bestGrade: userData.bestGrade,
+          lastTestDate: userData.lastTestDate,
+          averageAbility: userData.averageAbility || 0,
+        });
+      });
+
+      // Natijalarni eng yaxshi ball bo'yicha saralash (yuqoridan pastga)
+      testResults.sort((a, b) => b.bestScore - a.bestScore);
 
       // PDF yaratish
       await ctx.reply("📊 PDF yaratilmoqda...");
@@ -774,7 +847,7 @@ class AdminController {
             `📊 **Test natijalari**\n\n` +
             `📝 Test: ${testInfo.title}\n` +
             `📚 Fan: ${testInfo.subject}\n` +
-            `👥 Jami talabgorlar: ${testResults.length}\n` +
+            `👥 Jami foydalanuvchilar: ${testResults.length}\n` +
             `📅 Sana: ${new Date().toLocaleDateString("uz-UZ")}`,
         }
       );

@@ -11,6 +11,12 @@ const questionSchema = new mongoose.Schema({
     min: 0,
     max: 3,
   },
+  difficulty: {
+    type: Number,
+    default: 0.5, // 0-1 oralig'ida, 0.5 = o'rtacha qiyinlik
+    min: 0,
+    max: 1,
+  },
 });
 
 const testSchema = new mongoose.Schema({
