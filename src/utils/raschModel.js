@@ -50,11 +50,32 @@ class RaschModel {
 
       for (let i = 0; i < totalQuestions; i++) {
         const difficulty = questionDifficulty[i] || 0.5; // Default qiyinlik
-        const userAnswer = userAnswers[i] || -1;
-        const isCorrect =
-          userAnswer >= 0
-            ? userAnswer === this.getCorrectAnswer(i, testQuestions)
-            : false;
+        const userAnswerData = userAnswers[i];
+        const question = testQuestions[i];
+
+        let isCorrect = false;
+        let answered = false;
+
+        if (userAnswerData) {
+          if (question.questionType === "written") {
+            // Yozma savol
+            if (userAnswerData.type === "written" && !userAnswerData.skipped) {
+              answered = true;
+              isCorrect =
+                userAnswerData.answer.toLowerCase().trim() ===
+                question.correctWrittenAnswer.toLowerCase().trim();
+            }
+          } else {
+            // Variantli savol
+            if (
+              userAnswerData.type === "multiple_choice" &&
+              !userAnswerData.skipped
+            ) {
+              answered = true;
+              isCorrect = userAnswerData.answer === question.correctAnswer;
+            }
+          }
+        }
 
         // Rash modeli formulasiga asoslangan ball
         const raschProbability = this.calculateRaschProbability(
@@ -63,7 +84,7 @@ class RaschModel {
         );
         const questionWeight = this.calculateQuestionWeight(difficulty);
 
-        if (userAnswer >= 0) {
+        if (answered) {
           // Faqat javob berilgan savollar
           answeredQuestions++;
           if (isCorrect) {

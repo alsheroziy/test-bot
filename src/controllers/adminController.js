@@ -187,52 +187,197 @@ class AdminController {
           "Endi savollarni kiritishni boshlaymiz.\n\n" +
           "📝 **Eslatma:** Foydalanuvchilar savollarni qog'ozdan o'qadi.\n" +
           "Siz faqat to'g'ri javobni belgilaysiz.\n\n" +
-          "Savol raqamini kiriting (masalan: 1):"
+          "Avtomatik ravishda birinchi savolni boshlaymiz:"
       );
+
+      // Avtomatik ravishda birinchi savolni boshlash
+      await AdminController.startNextQuestion(ctx);
     } catch (error) {
       console.error("Handle time limit error:", error);
       await ctx.reply("Xatolik yuz berdi.");
     }
   }
 
-  // Savol raqamini qabul qilish
-  static async handleQuestionNumber(ctx) {
+  // Keyingi savolni avtomatik boshlash
+  static async startNextQuestion(ctx) {
     try {
-      const questionNumber = parseInt(ctx.message.text);
+      // Avtomatik ravishda keyingi savol raqamini hisoblash
+      const nextQuestionNumber = ctx.session.testData.questions.length + 1;
+      ctx.session.currentQuestionNumber = nextQuestionNumber;
+      ctx.session.currentStep = "questionType";
 
-      if (isNaN(questionNumber) || questionNumber < 1) {
-        await ctx.reply(
-          "Iltimos, to'g'ri savol raqamini kiriting (1, 2, 3...):"
-        );
-        return;
-      }
-
-      ctx.session.currentQuestionNumber = questionNumber;
-      ctx.session.currentStep = "correctAnswer";
+      // Progress ko'rsatish
+      const progressText = `📊 **Progress:** ${ctx.session.testData.questions.length} savol qo'shildi\n\n`;
 
       const questionText =
-        `📝 **Savol ${questionNumber}**\n\n` +
-        "Qog'ozdagi savolni o'qing va to'g'ri javobni belgilang:\n\n" +
-        "A) Birinchi variant\n" +
-        "B) Ikkinchi variant\n" +
-        "C) Uchinchi variant\n" +
-        "D) To'rtinchi variant\n\n" +
-        "To'g'ri javobni tanlang:";
+        progressText +
+        `📝 **Savol ${nextQuestionNumber}**\n\n` +
+        "Bu savol qanday turda bo'ladi?\n\n" +
+        "Variantli savol yoki yozma savol tanlang:";
 
-      const answerButtons = Markup.inlineKeyboard([
+      const typeButtons = Markup.inlineKeyboard([
         [
-          Markup.button.callback("A", `answer_A_${questionNumber}`),
-          Markup.button.callback("B", `answer_B_${questionNumber}`),
-        ],
-        [
-          Markup.button.callback("C", `answer_C_${questionNumber}`),
-          Markup.button.callback("D", `answer_D_${questionNumber}`),
+          Markup.button.callback(
+            "📋 Variantli savol",
+            `type_multiple_${nextQuestionNumber}`
+          ),
+          Markup.button.callback(
+            "✍️ Yozma savol",
+            `type_written_${nextQuestionNumber}`
+          ),
         ],
       ]);
 
-      await ctx.reply(questionText, answerButtons);
+      await ctx.reply(questionText, typeButtons);
     } catch (error) {
-      console.error("Handle question number error:", error);
+      console.error("Start next question error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Savol turini qabul qilish
+  static async handleQuestionType(ctx) {
+    try {
+      const callbackData = ctx.callbackQuery.data;
+      const [, type, questionNumber] = callbackData.split("_");
+
+      ctx.session.currentQuestionType = type;
+      ctx.session.currentQuestionNumber = parseInt(questionNumber);
+
+      // Callback query ni javoblash
+      await ctx.answerCbQuery(
+        `✅ Savol turi tanlandi: ${type === "multiple" ? "Variantli" : "Yozma"}`
+      );
+
+      if (type === "multiple") {
+        ctx.session.currentStep = "variantCount";
+
+        const questionText =
+          `📝 **Savol ${questionNumber} (Variantli)**\n\n` +
+          "Bu savol uchun nechta javob varianti bo'ladi?\n\n" +
+          "Variantlar sonini tanlang:";
+
+        const variantButtons = Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              "4 ta (A, B, C, D)",
+              `variants_4_${questionNumber}`
+            ),
+            Markup.button.callback(
+              "6 ta (A, B, C, D, E, F)",
+              `variants_6_${questionNumber}`
+            ),
+          ],
+          // [
+
+          // ],
+        ]);
+
+        await ctx.reply(questionText, variantButtons);
+      } else {
+        ctx.session.currentStep = "writtenAnswer";
+
+        await ctx.reply(
+          `📝 **Savol ${questionNumber} (Yozma)**\n\n` +
+            "Qog'ozdagi savolni o'qing va to'g'ri javobni yozing:\n\n" +
+            "To'g'ri javobni matn ko'rinishida kiriting:"
+        );
+      }
+    } catch (error) {
+      console.error("Handle question type error:", error);
+      await ctx.answerCbQuery("Xatolik yuz berdi!");
+    }
+  }
+
+  // Variantlar sonini qabul qilish
+  static async handleVariantCount(ctx) {
+    try {
+      const callbackData = ctx.callbackQuery.data;
+      const [, count, questionNumber] = callbackData.split("_");
+      const variantCount = parseInt(count);
+
+      ctx.session.currentVariantCount = variantCount;
+      ctx.session.currentStep = "correctAnswer";
+
+      // Callback query ni javoblash
+      await ctx.answerCbQuery(`✅ ${variantCount} ta variant tanlandi!`);
+
+      // Variant harflarini yaratish
+      const variantLetters = [];
+      for (let i = 0; i < variantCount; i++) {
+        variantLetters.push(String.fromCharCode(65 + i)); // A, B, C, D, E, F, G, H
+      }
+
+      const questionText =
+        `📝 **Savol ${questionNumber} (${variantCount} ta variant)**\n\n` +
+        "Qog'ozdagi savolni o'qing va to'g'ri javobni belgilang:\n\n" +
+        variantLetters
+          .map((letter) => `${letter}) ${letter} variant`)
+          .join("\n") +
+        "\n\nTo'g'ri javobni tanlang:";
+
+      // Variant tugmalarini dinamik yaratish
+      const answerButtons = [];
+      const buttonsPerRow = 2;
+
+      for (let i = 0; i < variantLetters.length; i += buttonsPerRow) {
+        const row = variantLetters
+          .slice(i, i + buttonsPerRow)
+          .map((letter) =>
+            Markup.button.callback(letter, `answer_${letter}_${questionNumber}`)
+          );
+        answerButtons.push(row);
+      }
+
+      const answerMenu = Markup.inlineKeyboard(answerButtons);
+
+      await ctx.reply(questionText, answerMenu);
+    } catch (error) {
+      console.error("Handle variant count error:", error);
+      await ctx.answerCbQuery("Xatolik yuz berdi!");
+    }
+  }
+
+  // Yozma javobni qabul qilish
+  static async handleWrittenAnswer(ctx) {
+    try {
+      const correctAnswer = ctx.message.text.trim();
+      const questionNumber = ctx.session.currentQuestionNumber;
+
+      if (correctAnswer.length < 1) {
+        await ctx.reply("Iltimos, to'g'ri javobni kiriting:");
+        return;
+      }
+
+      // Yozma savolni saqlash
+      const questionData = {
+        questionNumber: questionNumber,
+        questionType: "written",
+        correctWrittenAnswer: correctAnswer,
+      };
+
+      ctx.session.testData.questions.push(questionData);
+      ctx.session.questionIndex++;
+
+      const nextStepText =
+        `✅ Yozma savol ${questionNumber} saqlandi!\n\n` +
+        "To'g'ri javob: " +
+        correctAnswer +
+        "\n\n" +
+        "Keyingi savolni qo'shish yoki testni tugatish uchun tanlang:";
+
+      const nextStepButtons = Markup.inlineKeyboard([
+        [
+          Markup.button.callback("➕ Keyingi savol", "add_next_question"),
+          Markup.button.callback("🏁 Testni tugatish", "finish_test"),
+        ],
+      ]);
+
+      await ctx.reply(nextStepText, nextStepButtons);
+
+      ctx.session.currentStep = "nextQuestion";
+    } catch (error) {
+      console.error("Handle written answer error:", error);
       await ctx.reply("Xatolik yuz berdi.");
     }
   }
@@ -243,28 +388,34 @@ class AdminController {
       const callbackData = ctx.callbackQuery.data;
       const [, answer, questionNumber] = callbackData.split("_");
 
-      // Javob raqamini aniqlash (A=0, B=1, C=2, D=3)
-      const correctAnswer =
-        answer === "A" ? 0 : answer === "B" ? 1 : answer === "C" ? 2 : 3;
+      // Javob raqamini aniqlash (A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7)
+      const correctAnswer = answer.charCodeAt(0) - 65; // A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7
 
       // Savolni saqlash
       const questionData = {
         questionNumber: parseInt(questionNumber),
+        questionType: "multiple_choice",
         correctAnswer: correctAnswer,
+        variantCount: ctx.session.currentVariantCount || 4, // Default 4 ta variant
       };
 
       ctx.session.testData.questions.push(questionData);
       ctx.session.questionIndex++;
 
       // Callback query ni javoblash
-      await ctx.answerCbQuery(`✅ Savol ${questionNumber} saqlandi!`);
+      await ctx.answerCbQuery(`✅ Variantli savol ${questionNumber} saqlandi!`);
 
       const nextStepText =
-        `✅ Savol ${questionNumber} saqlandi!\n\n` +
-        "Keyingi savol raqamini kiriting yoki testni tugatish uchun tugmani bosing:";
+        `✅ Variantli savol ${questionNumber} saqlandi!\n\n` +
+        `To'g'ri javob: ${answer}\n` +
+        `Variantlar soni: ${ctx.session.currentVariantCount} ta\n\n` +
+        "Keyingi savolni qo'shish yoki testni tugatish uchun tanlang:";
 
       const nextStepButtons = Markup.inlineKeyboard([
-        [Markup.button.callback("🏁 Testni tugatish", "finish_test")],
+        [
+          Markup.button.callback("➕ Keyingi savol", "add_next_question"),
+          Markup.button.callback("🏁 Testni tugatish", "finish_test"),
+        ],
       ]);
 
       await ctx.reply(nextStepText, nextStepButtons);
@@ -284,9 +435,12 @@ class AdminController {
 
       if (testData.questions.length < 1) {
         await ctx.reply(
-          "Testda kamida 1 savol bo'lishi kerak. Savol raqamini kiriting:"
+          "Testda kamida 1 savol bo'lishi kerak.\n\n" +
+            "Iltimos, avval savol qo'shing:"
         );
-        ctx.session.currentStep = "questions";
+
+        // Avtomatik ravishda birinchi savolni boshlash
+        await AdminController.startNextQuestion(ctx);
         return;
       }
 
@@ -314,6 +468,43 @@ class AdminController {
       );
     } catch (error) {
       console.error("Finish test creation error:", error);
+      await ctx.reply("Xatolik yuz berdi.");
+    }
+  }
+
+  // Keyingi savolni avtomatik boshlash
+  static async startNextQuestion(ctx) {
+    try {
+      // Avtomatik ravishda keyingi savol raqamini hisoblash
+      const nextQuestionNumber = ctx.session.testData.questions.length + 1;
+      ctx.session.currentQuestionNumber = nextQuestionNumber;
+      ctx.session.currentStep = "questionType";
+
+      // Progress ko'rsatish
+      const progressText = `📊 **Progress:** ${ctx.session.testData.questions.length} savol qo'shildi\n\n`;
+
+      const questionText =
+        progressText +
+        `📝 **Savol ${nextQuestionNumber}**\n\n` +
+        "Bu savol qanday turda bo'ladi?\n\n" +
+        "Variantli savol yoki yozma savol tanlang:";
+
+      const typeButtons = Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "📋 Variantli savol",
+            `type_multiple_${nextQuestionNumber}`
+          ),
+          Markup.button.callback(
+            "✍️ Yozma savol",
+            `type_written_${nextQuestionNumber}`
+          ),
+        ],
+      ]);
+
+      await ctx.reply(questionText, typeButtons);
+    } catch (error) {
+      console.error("Start next question error:", error);
       await ctx.reply("Xatolik yuz berdi.");
     }
   }

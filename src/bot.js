@@ -160,7 +160,25 @@ bot.on("text", async (ctx) => {
       }
 
       // Answer selection - test yechish jarayonida
-      if (["A", "B", "C", "D", "⏭️ O'tkazib yuborish"].includes(text)) {
+      if (
+        [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E",
+          "F",
+          "G",
+          "H",
+          "⏭️ O'tkazib yuborish",
+        ].includes(text)
+      ) {
+        await TestController.handleAnswer(ctx);
+        return;
+      }
+
+      // Yozma javob - test yechish jarayonida
+      if (session?.currentTest && session?.currentQuestionIndex !== undefined) {
         await TestController.handleAnswer(ctx);
         return;
       }
@@ -213,8 +231,14 @@ bot.on("callback_query", async (ctx) => {
 
   if (callbackData.startsWith("answer_")) {
     await AdminController.handleCorrectAnswerCallback(ctx);
+  } else if (callbackData.startsWith("type_")) {
+    await AdminController.handleQuestionType(ctx);
+  } else if (callbackData.startsWith("variants_")) {
+    await AdminController.handleVariantCount(ctx);
   } else if (callbackData === "finish_test") {
     await AdminController.finishTestCreation(ctx);
+  } else if (callbackData === "add_next_question") {
+    await AdminController.startNextQuestion(ctx);
   } else if (callbackData.startsWith("confirm_subject_")) {
     await AdminController.handleSubjectConfirm(ctx);
   } else if (callbackData === "cancel_subject") {
@@ -254,12 +278,13 @@ async function handleAdminTestCreation(ctx) {
       await AdminController.handleTimeLimit(ctx);
       break;
 
-    case "questions":
-      await AdminController.handleQuestionNumber(ctx);
+    case "writtenAnswer":
+      await AdminController.handleWrittenAnswer(ctx);
       break;
 
     case "nextQuestion":
-      await AdminController.handleQuestionNumber(ctx);
+      // This is now handled by callback buttons
+      await ctx.reply("Iltimos, tugmalardan birini tanlang.");
       break;
 
     default:
@@ -275,12 +300,17 @@ async function handleTestFlow(ctx) {
   if (text === "✅ Testni boshlash") {
     console.log("Testni boshlash tugmasi bosildi");
     await TestController.beginTest(ctx);
-  } else if (["A", "B", "C", "D", "⏭️ O'tkazib yuborish"].includes(text)) {
+  } else if (
+    ["A", "B", "C", "D", "E", "F", "G", "H", "⏭️ O'tkazib yuborish"].includes(
+      text
+    )
+  ) {
     console.log("Javob tugmasi bosildi:", text);
     await TestController.handleAnswer(ctx);
   } else {
-    console.log("Noto'g'ri tugma bosildi:", text);
-    await ctx.reply("Iltimos, tugmalardan birini tanlang.");
+    // Yozma javob yoki boshqa matn
+    console.log("Yozma javob yoki boshqa matn:", text);
+    await TestController.handleAnswer(ctx);
   }
 }
 

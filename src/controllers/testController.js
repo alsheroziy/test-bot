@@ -280,33 +280,59 @@ class TestController {
         currentIndex: currentIndex,
         totalQuestions: test.questions.length,
         questionNumber: question.questionNumber,
+        questionType: question.questionType,
       });
 
-      const questionText =
-        `❓ **Savol ${question.questionNumber}/${test.questions.length}:**\n\n` +
-        `📝 Qog'ozdagi savolni o'qing va javobni belgilang:\n\n` +
-        "A) Birinchi variant\n" +
-        "B) Ikkinchi variant\n" +
-        "C) Uchinchi variant\n" +
-        "D) To'rtinchi variant\n\n" +
-        "Javobni tanlang:";
+      if (question.questionType === "written") {
+        // Yozma savol
+        const questionText =
+          `❓ **Savol ${question.questionNumber}/${test.questions.length} (Yozma):**\n\n` +
+          `📝 Qog'ozdagi savolni o'qing va javobni yozing:\n\n` +
+          "Javobingizni matn ko'rinishida kiriting:";
 
-      // Tugmalarni to'g'ridan-to'g'ri yaratish
-      const { Markup } = require("telegraf");
-      const answerKeyboard = Markup.keyboard([
-        ["A", "B"],
-        ["C", "D"],
-        ["⏭️ O'tkazib yuborish"],
-      ]).resize();
+        const { Markup } = require("telegraf");
+        const writtenKeyboard = Markup.keyboard([
+          ["⏭️ O'tkazib yuborish"],
+        ]).resize();
 
-      console.log("answerKeyboard yaratildi:", answerKeyboard);
+        await ctx.reply(questionText, { parse_mode: "Markdown" });
+        await ctx.reply("Javobingizni yozing:", writtenKeyboard);
+      } else {
+        // Variantli savol
+        const variantCount = question.variantCount || 4; // Default 4 ta variant
 
-      // Tugmalarni alohida yuborish
-      await ctx.reply(questionText, { parse_mode: "Markdown" });
-      console.log("Savol yuborildi");
+        // Variant harflarini yaratish
+        const variantLetters = [];
+        for (let i = 0; i < variantCount; i++) {
+          variantLetters.push(String.fromCharCode(65 + i)); // A, B, C, D, E, F, G, H
+        }
 
-      await ctx.reply("Javobni tanlang:", answerKeyboard);
-      console.log("Tugmalar yuborildi");
+        const questionText =
+          `❓ **Savol ${question.questionNumber}/${test.questions.length} (${variantCount} ta variant):**\n\n` +
+          `📝 Qog'ozdagi savolni o'qing va javobni belgilang:\n\n` +
+          variantLetters
+            .map((letter) => `${letter}) ${letter} variant`)
+            .join("\n") +
+          "\n\nJavobni tanlang:";
+
+        // Dinamik tugmalarni yaratish
+        const { Markup } = require("telegraf");
+        const answerButtons = [];
+        const buttonsPerRow = 2;
+
+        for (let i = 0; i < variantLetters.length; i += buttonsPerRow) {
+          const row = variantLetters.slice(i, i + buttonsPerRow);
+          answerButtons.push(row);
+        }
+
+        // O'tkazib yuborish tugmasini qo'shish
+        answerButtons.push(["⏭️ O'tkazib yuborish"]);
+
+        const answerKeyboard = Markup.keyboard(answerButtons).resize();
+
+        await ctx.reply(questionText, { parse_mode: "Markdown" });
+        await ctx.reply("Javobni tanlang:", answerKeyboard);
+      }
 
       console.log("Savol va tugmalar yuborildi");
     } catch (error) {
@@ -339,15 +365,17 @@ class TestController {
       }
       ctx.session.lastAnswerTime = now;
 
-      const answer = ctx.message.text.trim().toUpperCase();
+      const answer = ctx.message.text.trim();
       const test = ctx.session.currentTest;
       const currentIndex = ctx.session.currentQuestionIndex;
+      const question = test.questions[currentIndex];
 
       console.log("Answer processing:", {
         answer: answer,
         currentIndex: currentIndex,
         totalQuestions: test.questions.length,
         userAnswersLength: ctx.session.userAnswers.length,
+        questionType: question.questionType,
       });
 
       // Validate current question index
@@ -363,26 +391,6 @@ class TestController {
         return;
       }
 
-      let selectedAnswer = -1;
-
-      // Javob raqamini aniqlash
-      if (answer === "A") selectedAnswer = 0;
-      else if (answer === "B") selectedAnswer = 1;
-      else if (answer === "C") selectedAnswer = 2;
-      else if (answer === "D") selectedAnswer = 3;
-      else if (answer === "⏭️ O'tkazib yuborish") selectedAnswer = -1;
-
-      console.log("Answer mapping:", { answer, selectedAnswer });
-
-      // Validate that we got a valid answer
-      if (selectedAnswer === -1 && answer !== "⏭️ O'tkazib yuborish") {
-        console.log("Invalid answer received:", answer);
-        await ctx.reply(
-          "Noto'g'ri javob tanlandi. Iltimos, A, B, C yoki D tugmalaridan birini tanlang."
-        );
-        return;
-      }
-
       // Check if this question was already answered
       if (ctx.session.userAnswers[currentIndex] !== undefined) {
         console.log("Question already answered, ignoring duplicate answer");
@@ -392,8 +400,75 @@ class TestController {
         return;
       }
 
+      let selectedAnswer = -1;
+      let writtenAnswer = null;
+
+      if (question.questionType === "written") {
+        // Yozma savol uchun
+        if (answer === "⏭️ O'tkazib yuborish") {
+          selectedAnswer = -1;
+        } else {
+          writtenAnswer = answer;
+          selectedAnswer = -2; // Yozma javob belgisi
+        }
+      } else {
+        // Variantli savol uchun
+        const answerUpper = answer.toUpperCase();
+        const variantCount = question.variantCount || 4;
+
+        // Javob raqamini aniqlash (A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7)
+        if (answerUpper === "⏭️ O'tkazib yuborish") {
+          selectedAnswer = -1;
+        } else {
+          // Harf raqamini aniqlash (A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7)
+          const letterCode = answerUpper.charCodeAt(0);
+          if (letterCode >= 65 && letterCode <= 72) {
+            // A-H harflari
+            selectedAnswer = letterCode - 65;
+
+            // Variantlar soniga mos kelishini tekshirish
+            if (selectedAnswer >= variantCount) {
+              console.log(
+                "Invalid answer received:",
+                answer,
+                "for variant count:",
+                variantCount
+              );
+              await ctx.reply(
+                `Noto'g'ri javob tanlandi. Iltimos, A dan ${String.fromCharCode(
+                  65 + variantCount - 1
+                )} gacha tugmalardan birini tanlang.`
+              );
+              return;
+            }
+          } else {
+            console.log("Invalid answer received:", answer);
+            await ctx.reply(
+              `Noto'g'ri javob tanlandi. Iltimos, A dan ${String.fromCharCode(
+                65 + variantCount - 1
+              )} gacha tugmalardan birini tanlang.`
+            );
+            return;
+          }
+        }
+      }
+
+      console.log("Answer mapping:", { answer, selectedAnswer, writtenAnswer });
+
       // Javobni saqlash
-      ctx.session.userAnswers[currentIndex] = selectedAnswer;
+      if (question.questionType === "written") {
+        ctx.session.userAnswers[currentIndex] = {
+          type: "written",
+          answer: writtenAnswer,
+          skipped: selectedAnswer === -1,
+        };
+      } else {
+        ctx.session.userAnswers[currentIndex] = {
+          type: "multiple_choice",
+          answer: selectedAnswer,
+          skipped: selectedAnswer === -1,
+        };
+      }
 
       // Force session save
       ctx.session = { ...ctx.session };
@@ -401,16 +476,31 @@ class TestController {
       console.log("Answer saved:", {
         questionIndex: currentIndex,
         selectedAnswer: selectedAnswer,
+        writtenAnswer: writtenAnswer,
         userAnswers: ctx.session.userAnswers,
         userAnswersLength: ctx.session.userAnswers.length,
       });
 
       // Confirm answer to user
-      const answerLabels = ["A", "B", "C", "D"];
-      const answerText =
-        selectedAnswer >= 0
-          ? answerLabels[selectedAnswer]
-          : "O'tkazib yuborildi";
+      let answerText;
+      if (question.questionType === "written") {
+        if (selectedAnswer === -1) {
+          answerText = "O'tkazib yuborildi";
+        } else {
+          answerText = `Yozma javob: ${writtenAnswer}`;
+        }
+      } else {
+        const variantCount = question.variantCount || 4;
+        const answerLabels = [];
+        for (let i = 0; i < variantCount; i++) {
+          answerLabels.push(String.fromCharCode(65 + i)); // A, B, C, D, E, F, G, H
+        }
+        answerText =
+          selectedAnswer >= 0
+            ? answerLabels[selectedAnswer]
+            : "O'tkazib yuborildi";
+      }
+
       await ctx.reply(`✅ Javob saqlandi: ${answerText}`);
 
       // Keyingi savolga o'tish
@@ -467,26 +557,70 @@ class TestController {
       // Natijalarni hisoblash
       let correctAnswers = 0;
       const results = [];
+      const writtenAnswers = [];
 
       test.questions.forEach((question, index) => {
         // Ensure userAnswers is properly accessed
-        let userAnswer = -1;
+        let userAnswerData = null;
 
         if (Array.isArray(userAnswers) && userAnswers[index] !== undefined) {
-          userAnswer = userAnswers[index];
+          userAnswerData = userAnswers[index];
         } else if (
           typeof userAnswers === "object" &&
           userAnswers[index] !== undefined
         ) {
-          userAnswer = userAnswers[index];
+          userAnswerData = userAnswers[index];
         }
 
-        const isCorrect = userAnswer === question.correctAnswer;
+        let isCorrect = false;
+        let userAnswerText = "Javob berilmagan";
+        let correctAnswerText = "";
+
+        if (question.questionType === "written") {
+          // Yozma savol
+          if (
+            userAnswerData &&
+            userAnswerData.type === "written" &&
+            !userAnswerData.skipped
+          ) {
+            userAnswerText = userAnswerData.answer;
+            correctAnswerText = question.correctWrittenAnswer;
+
+            // Yozma javoblarni taqqoslash (katta-kichik harflarni hisobga olmasdan)
+            isCorrect =
+              userAnswerData.answer.toLowerCase().trim() ===
+              question.correctWrittenAnswer.toLowerCase().trim();
+
+            // Yozma javobni saqlash
+            writtenAnswers.push({
+              questionNumber: question.questionNumber,
+              userAnswer: userAnswerData.answer,
+              correctAnswer: question.correctWrittenAnswer,
+              isCorrect: isCorrect,
+            });
+          }
+        } else {
+          // Variantli savol
+          if (
+            userAnswerData &&
+            userAnswerData.type === "multiple_choice" &&
+            !userAnswerData.skipped
+          ) {
+            const userAnswer = userAnswerData.answer;
+            isCorrect = userAnswer === question.correctAnswer;
+
+            const answerLabels = ["A", "B", "C", "D"];
+            userAnswerText =
+              userAnswer >= 0 ? answerLabels[userAnswer] : "Javob berilmagan";
+            correctAnswerText = answerLabels[question.correctAnswer];
+          }
+        }
 
         console.log(`Question ${index + 1}:`, {
           questionNumber: question.questionNumber,
-          userAnswer: userAnswer,
-          correctAnswer: question.correctAnswer,
+          questionType: question.questionType,
+          userAnswer: userAnswerText,
+          correctAnswer: correctAnswerText,
           isCorrect: isCorrect,
           userAnswersArray: userAnswers,
           userAnswersIndex: userAnswers[index],
@@ -496,12 +630,11 @@ class TestController {
 
         if (isCorrect) correctAnswers++;
 
-        const answerLabels = ["A", "B", "C", "D"];
         results.push({
           questionNumber: question.questionNumber,
-          userAnswer:
-            userAnswer >= 0 ? answerLabels[userAnswer] : "Javob berilmagan",
-          correctAnswer: answerLabels[question.correctAnswer],
+          questionType: question.questionType,
+          userAnswer: userAnswerText,
+          correctAnswer: correctAnswerText,
           isCorrect,
         });
       });
@@ -552,6 +685,7 @@ class TestController {
         adjustedScore: raschResult.adjustedScore,
         userAbility: raschResult.userAbility,
         grade: gradeInfo.grade,
+        writtenAnswers: writtenAnswers,
         completedAt: new Date(),
       };
 
@@ -636,7 +770,9 @@ class TestController {
 
       results.forEach((result, index) => {
         const status = result.isCorrect ? "✅" : "❌";
-        detailedText += `${status} **Savol ${result.questionNumber}:**\n`;
+        const questionType =
+          result.questionType === "written" ? "(Yozma)" : "(Variantli)";
+        detailedText += `${status} **Savol ${result.questionNumber} ${questionType}:**\n`;
         detailedText += `👤 Sizning javob: ${result.userAnswer}\n`;
         detailedText += `✅ To'g'ri javob: ${result.correctAnswer}\n\n`;
       });

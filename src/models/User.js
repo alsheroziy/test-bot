@@ -1,53 +1,63 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
   telegramId: {
     type: Number,
     required: true,
-    unique: true
+    unique: true,
   },
   firstName: {
     type: String,
-    required: true
+    required: true,
   },
   lastName: {
     type: String,
     required: false,
-    default: ''
+    default: "",
   },
   phoneNumber: {
     type: String,
     required: false,
-    default: ''
+    default: "",
   },
   isAdmin: {
     type: Boolean,
-    default: false
+    default: false,
   },
   currentTest: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Test'
+    ref: "Test",
   },
   currentQuestionIndex: {
     type: Number,
-    default: 0
+    default: 0,
   },
-  testResults: [{
-    testId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Test'
+  testResults: [
+    {
+      testId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Test",
+      },
+      score: Number,
+      totalQuestions: Number,
+      writtenAnswers: [
+        {
+          questionNumber: Number,
+          userAnswer: String,
+          isCorrect: Boolean,
+          correctAnswer: String,
+        },
+      ],
+      completedAt: {
+        type: Date,
+        default: Date.now,
+      },
     },
-    score: Number,
-    totalQuestions: Number,
-    completedAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
+  ],
   createdAt: {
     type: Date,
-    default: Date.now
-  }
+    default: Date.now,
+  },
 });
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.model("User", userSchema);
