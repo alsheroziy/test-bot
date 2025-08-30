@@ -1,6 +1,4 @@
 const PDFDocument = require("pdfkit");
-const fs = require("fs");
-const path = require("path");
 
 class PDFGenerator {
   static async generateTestResultsPDF(testResults, testInfo) {
@@ -16,19 +14,19 @@ class PDFGenerator {
           },
         });
 
-        // Create a unique filename
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const filename = `test_results_${timestamp}.pdf`;
-        const filepath = path.join(__dirname, "..", "..", "temp", filename);
+        // Create buffer chunks array
+        const chunks = [];
 
-        // Ensure temp directory exists
-        const tempDir = path.dirname(filepath);
-        if (!fs.existsSync(tempDir)) {
-          fs.mkdirSync(tempDir, { recursive: true });
-        }
+        // Collect PDF data in chunks
+        doc.on("data", (chunk) => {
+          chunks.push(chunk);
+        });
 
-        const stream = fs.createWriteStream(filepath);
-        doc.pipe(stream);
+        doc.on("end", () => {
+          // Combine all chunks into a single buffer
+          const pdfBuffer = Buffer.concat(chunks);
+          resolve({ pdfBuffer });
+        });
 
         // Header
         doc
@@ -227,11 +225,7 @@ class PDFGenerator {
 
         doc.end();
 
-        stream.on("finish", () => {
-          resolve({ filepath, filename });
-        });
-
-        stream.on("error", (error) => {
+        doc.on("error", (error) => {
           reject(error);
         });
       } catch (error) {

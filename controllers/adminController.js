@@ -5,7 +5,6 @@ const RaschModel = require("../utils/raschModel");
 const { adminMenu, mainMenu } = require("../utils/keyboards");
 const { Markup } = require("telegraf");
 const PDFGenerator = require("../utils/pdfGenerator");
-const fs = require("fs");
 
 class AdminController {
   // Admin menyusini ko'rsatish
@@ -1025,14 +1024,17 @@ class AdminController {
       // PDF yaratish
       await ctx.reply("📊 PDF yaratilmoqda...");
 
-      const { filepath, filename } = await PDFGenerator.generateTestResultsPDF(
+      const { pdfBuffer } = await PDFGenerator.generateTestResultsPDF(
         testResults,
         testInfo
       );
 
-      // PDF faylni yuborish
+      // PDF faylni yuborish (Telegram serveriga saqlash)
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `test_results_${timestamp}.pdf`;
+
       await ctx.replyWithDocument(
-        { source: filepath },
+        { source: pdfBuffer, filename: filename },
         {
           caption:
             `📊 **Test natijalari**\n\n` +
@@ -1042,13 +1044,6 @@ class AdminController {
             `📅 Sana: ${new Date().toLocaleDateString("uz-UZ")}`,
         }
       );
-
-      // Faylni o'chirish
-      setTimeout(() => {
-        if (fs.existsSync(filepath)) {
-          fs.unlinkSync(filepath);
-        }
-      }, 60000); // 1 daqiqadan keyin o'chirish
     } catch (error) {
       console.error("Download PDF error:", error);
       await ctx.reply(
