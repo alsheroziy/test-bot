@@ -10,11 +10,7 @@ const AdminController = require("../controllers/adminController");
 const { mainMenu } = require("../utils/keyboards");
 
 // Bot yaratish
-if (!process.env.BOT_TOKEN) {
-  throw new Error("BOT_TOKEN environment variable is required");
-}
-
-const bot = new Telegraf(process.env.BOT_TOKEN);
+const bot = new Telegraf(process.env.BOT_TOKEN || "dummy-token");
 
 // Session middleware - Vercel uchun memory session
 bot.use(
@@ -396,6 +392,8 @@ bot.catch((err, ctx) => {
 
 // Vercel serverless function handler
 module.exports = async (req, res) => {
+  console.log("Request received:", req.method, req.url);
+  
   // CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -412,6 +410,9 @@ module.exports = async (req, res) => {
     res.status(200).json({
       status: "Bot is running",
       timestamp: new Date().toISOString(),
+      env: process.env.NODE_ENV,
+      hasBotToken: !!process.env.BOT_TOKEN,
+      hasMongoUri: !!process.env.MONGODB_URI
     });
     return;
   }
@@ -419,17 +420,26 @@ module.exports = async (req, res) => {
   try {
     // Database ulanish
     if (!process.env.MONGODB_URI) {
-      throw new Error("MONGODB_URI environment variable is required");
+      console.log("MONGODB_URI not found, skipping database connection");
+    } else {
+      await connectDB();
     }
-
-    await connectDB();
 
     // Bot webhook handler
     if (req.method === "POST") {
       console.log("Received webhook update:", req.body);
       if (!req.body) {
-        throw new Error("No request body received");
+        console.log("No request body received");
+        res.status(400).json({ error: "No request body" });
+        return;
       }
+      
+      if (!process.env.BOT_TOKEN) {
+        console.log("BOT_TOKEN not found");
+        res.status(500).json({ error: "Bot token not configured" });
+        return;
+      }
+      
       await bot.handleUpdate(req.body);
     }
 
@@ -441,6 +451,9 @@ module.exports = async (req, res) => {
       process.env.NODE_ENV === "production"
         ? "Internal server error"
         : error.message;
-    res.status(500).json({ error: errorMessage });
+    res.status(500).json({ 
+      error: errorMessage,
+      timestamp: new Date().toISOString()
+    });
   }
 };
