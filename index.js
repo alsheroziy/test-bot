@@ -16,32 +16,22 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 bot.use(session());
 
 // Auth middleware - Vercel uchun optimallashtirilgan
-bot.use(async (ctx, next) => {
-  try {
-    await authMiddleware(ctx, next);
-  } catch (error) {
-    console.error("Auth middleware error:", error);
-    // Continue without auth if there's an error
-    await next();
-  }
-});
+// bot.use(async (ctx, next) => {
+//   try {
+//     await authMiddleware(ctx, next);
+//   } catch (error) {
+//     console.error("Auth middleware error:", error);
+//     // Continue without auth if there's an error
+//     await next();
+//   }
+// });
 
 // Start command
 bot.start(async (ctx) => {
   console.log("Start command received from user:", ctx.from.id);
-  
-  try {
-    const user = ctx.state.user;
 
-    if (!user.phoneNumber) {
-      await UserController.startRegistration(ctx);
-    } else {
-      await ctx.reply(
-        `Xush kelibsiz, ${user.firstName}! 👋\n\n` +
-          "Test botiga xush kelibsiz. Quyidagi funksiyalardan birini tanlang:",
-        mainMenu
-      );
-    }
+  try {
+    await ctx.reply("Bot ishlayapti! 🚀\n\nTest botiga xush kelibsiz!");
   } catch (error) {
     console.error("Start command error:", error);
     await ctx.reply("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
@@ -393,6 +383,16 @@ async function handleBackButton(ctx) {
   }
 }
 
+// Text handler
+bot.on("text", async (ctx) => {
+  console.log("Text message received:", ctx.message.text);
+  try {
+    await ctx.reply(`Siz yozgan xabar: ${ctx.message.text}`);
+  } catch (error) {
+    console.error("Text handler error:", error);
+  }
+});
+
 // Error handler
 bot.catch((err, ctx) => {
   console.error(`Bot error for ${ctx.updateType}:`, err);
@@ -472,7 +472,7 @@ module.exports = async (req, res) => {
       console.log("Processing webhook update...");
       console.log("Update type:", req.body.update_id);
       console.log("Message:", req.body.message);
-      
+
       try {
         await bot.handleUpdate(req.body);
         console.log("Webhook update processed successfully");
