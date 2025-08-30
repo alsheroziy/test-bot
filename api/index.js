@@ -2,18 +2,22 @@ const { Telegraf, session } = require("telegraf");
 const { Markup } = require("telegraf");
 require("dotenv").config();
 
-const connectDB = require("./config/database");
-const { authMiddleware, adminMiddleware } = require("./middleware/auth");
-const UserController = require("./controllers/userController");
-const TestController = require("./controllers/testController");
-const AdminController = require("./controllers/adminController");
-const { mainMenu } = require("./utils/keyboards");
+const connectDB = require("../config/database");
+const { authMiddleware, adminMiddleware } = require("../middleware/auth");
+const UserController = require("../controllers/userController");
+const TestController = require("../controllers/testController");
+const AdminController = require("../controllers/adminController");
+const { mainMenu } = require("../utils/keyboards");
 
 // Bot yaratish
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// Session middleware
-bot.use(session());
+// Session middleware - Vercel uchun memory session
+bot.use(
+  session({
+    defaultSession: () => ({}),
+  })
+);
 
 // Auth middleware
 bot.use(authMiddleware);
@@ -142,10 +146,6 @@ bot.on("text", async (ctx) => {
 
     case "📄 Natijalarni yuklash":
       await AdminController.downloadTestResultsPDF(ctx);
-      break;
-
-    case "📊 Natijani ko'rish":
-      await TestController.showDetailedResults(ctx);
       break;
 
     case "📊 Natijani ko'rish":
@@ -384,23 +384,31 @@ bot.catch((err, ctx) => {
   ctx.reply("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
 });
 
-// Local development with polling
-async function startLocalBot() {
+// Vercel serverless function handler
+module.exports = async (req, res) => {
+  // CORS headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  // Handle OPTIONS request
+  if (req.method === "OPTIONS") {
+    res.status(200).end();
+    return;
+  }
+
   try {
     // Database ulanish
     await connectDB();
 
-    // Bot ishga tushirish with polling
-    await bot.launch();
-    console.log("🤖 Bot muvaffaqiyatli ishga tushdi! (Local mode)");
+    // Bot webhook handler
+    if (req.method === "POST") {
+      await bot.handleUpdate(req.body);
+    }
 
-    // Graceful stop
-    process.once("SIGINT", () => bot.stop("SIGINT"));
-    process.once("SIGTERM", () => bot.stop("SIGTERM"));
+    res.status(200).json({ ok: true });
   } catch (error) {
-    console.error("Bot ishga tushirishda xatolik:", error);
-    process.exit(1);
+    console.error("Webhook error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
-}
-
-startLocalBot();
+};

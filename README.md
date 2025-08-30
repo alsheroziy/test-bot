@@ -5,12 +5,14 @@ Bu bot foydalanuvchilarga turli fanlar bo'yicha test yechish imkonini beradi. Ad
 ## ✨ Xususiyatlar
 
 ### 👤 Foydalanuvchilar uchun:
+
 - 📝 Turli fanlar bo'yicha testlar yechish
 - 📊 Natijalarni ko'rish va tahlil qilish
 - 📱 Qulay interfeys va tugmalar
 - 📈 Shaxsiy statistika
 
 ### 🔧 Admin uchun:
+
 - ➕ Yangi testlar yaratish
 - 📋 Mavjud testlarni boshqarish
 - 👥 Foydalanuvchilar ro'yxatini ko'rish
@@ -18,18 +20,23 @@ Bu bot foydalanuvchilarga turli fanlar bo'yicha test yechish imkonini beradi. Ad
 
 ## 🚀 O'rnatish
 
-### 1. Loyihani klonlash
+### Lokal o'rnatish
+
+#### 1. Loyihani klonlash
+
 ```bash
 git clone <repository-url>
 cd bot
 ```
 
-### 2. Kerakli paketlarni o'rnatish
+#### 2. Kerakli paketlarni o'rnatish
+
 ```bash
 npm install
 ```
 
-### 3. MongoDB o'rnatish va ishga tushirish
+#### 3. MongoDB o'rnatish va ishga tushirish
+
 ```bash
 # macOS uchun (Homebrew orqali)
 brew install mongodb-community
@@ -41,25 +48,29 @@ sudo apt install mongodb
 sudo systemctl start mongodb
 ```
 
-### 4. Environment faylini sozlash
+#### 4. Environment faylini sozlash
+
 `.env` faylini tahrirlang:
+
 ```env
 BOT_TOKEN=your_telegram_bot_token_here
 MONGODB_URI=mongodb://localhost:27017/test_bot
 ADMIN_ID=your_admin_telegram_id_here
 ```
 
-### 5. Telegram bot tokenini olish
+#### 5. Telegram bot tokenini olish
+
 1. [@BotFather](https://t.me/botfather) ga yozing
 2. `/newbot` buyrug'ini yuboring
 3. Bot nomini va username ni kiriting
 4. Olingan tokeni `.env` faylida `BOT_TOKEN` ga yozing
 
-### 6. Admin ID ni olish
+#### 6. Admin ID ni olish
+
 1. [@userinfobot](https://t.me/userinfobot) ga yozing
 2. Olingan ID ni `.env` faylida `ADMIN_ID` ga yozing
 
-## 🏃‍♂️ Ishga tushirish
+#### 7. Ishga tushirish
 
 ```bash
 # Development rejimida
@@ -68,6 +79,44 @@ npm run dev
 # Production rejimida
 npm start
 ```
+
+### Vercel ga joylash
+
+#### 1. Vercel hisobingizga kirish
+
+- [Vercel](https://vercel.com) ga o'ting
+- GitHub hisobingiz bilan tizimga kiring
+
+#### 2. Loyihani import qilish
+
+- "New Project" tugmasini bosing
+- GitHub repositoryingizni tanlang
+- Import tugmasini bosing
+
+#### 3. Environment variables sozlash
+
+Vercel dashboard da "Settings" > "Environment Variables" ga o'ting va quyidagilarni qo'shing:
+
+```
+BOT_TOKEN=your_telegram_bot_token_here
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/database_name
+ADMIN_ID=your_admin_telegram_id_here
+```
+
+#### 4. Deploy qilish
+
+- "Deploy" tugmasini bosing
+- Joylash tugagandan so'ng, URL ni saqlang
+
+#### 5. Webhook sozlash
+
+Telegram bot webhook ni sozlash uchun quyidagi URL ga so'rov yuboring:
+
+```
+https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://your-vercel-app.vercel.app/api
+```
+
+**Eslatma:** `<YOUR_BOT_TOKEN>` va `your-vercel-app.vercel.app` ni o'zingizning ma'lumotlaringiz bilan almashtiring.
 
 ## 📁 Loyiha strukturasi
 
@@ -97,6 +146,7 @@ bot/
 ## 🎯 Foydalanish
 
 ### Foydalanuvchi uchun:
+
 1. `/start` buyrug'ini yuboring
 2. Ism va familiyangizni kiriting
 3. Telefon raqamingizni yuboring
@@ -104,6 +154,7 @@ bot/
 5. Testni boshlang va javob bering
 
 ### Admin uchun:
+
 1. `/admin` buyrug'ini yuboring
 2. "➕ Yangi test qo'shish" ni tanlang
 3. Test ma'lumotlarini kiriting
@@ -112,6 +163,7 @@ bot/
 ## 🔧 Sozlamalar
 
 ### Test yaratish jarayoni:
+
 1. **Test nomi** - Test uchun nom
 2. **Fan** - Test fani (Matematika, Fizika, va h.k.)
 3. **Tavsif** - Test haqida ma'lumot (ixtiyoriy)
@@ -124,10 +176,12 @@ bot/
 ## 📊 Ma'lumotlar bazasi
 
 ### Collections:
+
 - **users** - Foydalanuvchilar ma'lumotlari
 - **tests** - Testlar va savollar
 
 ### User modeli:
+
 ```javascript
 {
   telegramId: Number,
@@ -142,6 +196,7 @@ bot/
 ```
 
 ### Test modeli:
+
 ```javascript
 {
   title: String,
@@ -187,6 +242,7 @@ Agar bot ishlamasa:
 ## 📞 Yordam
 
 Savollaringiz bo'lsa:
+
 - GitHub Issues oching
 - Telegram: @your_username
 

@@ -1,6 +1,5 @@
 const { Telegraf, session } = require("telegraf");
 const { Markup } = require("telegraf");
-const express = require("express");
 require("dotenv").config();
 
 const connectDB = require("./config/database");
@@ -9,10 +8,6 @@ const UserController = require("./controllers/userController");
 const TestController = require("./controllers/testController");
 const AdminController = require("./controllers/adminController");
 const { mainMenu } = require("./utils/keyboards");
-
-// Express app yaratish
-const app = express();
-app.use(express.json());
 
 // Bot yaratish
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -389,71 +384,28 @@ bot.catch((err, ctx) => {
   ctx.reply("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
 });
 
-// Database connection
-let dbConnected = false;
+// Bot ishga tushirish
+async function startBot() {
+  try {
+    // Database ulanish
+    await connectDB();
 
-async function connectToDatabase() {
-  if (!dbConnected) {
-    try {
-      await connectDB();
-      dbConnected = true;
-      console.log("Database connected successfully");
-    } catch (error) {
-      console.error("Failed to connect to database:", error);
-      throw error;
-    }
+    // Bot ishga tushirish
+    await bot.launch();
+    console.log("🤖 Bot muvaffaqiyatli ishga tushdi!");
+
+    // Graceful stop
+    process.once("SIGINT", () => bot.stop("SIGINT"));
+    process.once("SIGTERM", () => bot.stop("SIGTERM"));
+  } catch (error) {
+    console.error("Bot ishga tushirishda xatolik:", error);
+    process.exit(1);
   }
 }
 
-// Health check endpoint
-app.get("/", (req, res) => {
-  res.json({
-    status: "Bot is running",
-    timestamp: new Date().toISOString(),
-    dbConnected,
-  });
-});
+module.exports = { bot, startBot };
 
-// Webhook endpoint for Telegram
-app.post("/webhook", async (req, res) => {
-  try {
-    // Connect to database if not connected
-    await connectToDatabase();
-
-    // Handle the webhook
-    await bot.handleUpdate(req.body);
-    res.status(200).json({ status: "ok" });
-  } catch (error) {
-    console.error("Webhook error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Set webhook endpoint
-app.post("/set-webhook", async (req, res) => {
-  try {
-    const webhookUrl = `${req.protocol}://${req.get("host")}/webhook`;
-    await bot.telegram.setWebhook(webhookUrl);
-    res.json({
-      status: "Webhook set successfully",
-      webhookUrl,
-    });
-  } catch (error) {
-    console.error("Set webhook error:", error);
-    res.status(500).json({ error: "Failed to set webhook" });
-  }
-});
-
-// Delete webhook endpoint
-app.post("/delete-webhook", async (req, res) => {
-  try {
-    await bot.telegram.deleteWebhook();
-    res.json({ status: "Webhook deleted successfully" });
-  } catch (error) {
-    console.error("Delete webhook error:", error);
-    res.status(500).json({ error: "Failed to delete webhook" });
-  }
-});
-
-// Export for Vercel
-module.exports = app;
+// Faqat development rejimida bot ishga tushirish
+if (process.env.NODE_ENV !== "production") {
+  startBot();
+}
