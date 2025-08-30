@@ -21,6 +21,7 @@ bot.use(
   session({
     defaultSession: () => ({}),
     ttl: 600, // 10 daqiqa
+    property: "session",
   })
 );
 
