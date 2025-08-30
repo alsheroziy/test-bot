@@ -15,21 +15,36 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 // Session middleware
 bot.use(session());
 
-// Auth middleware
-bot.use(authMiddleware);
+// Auth middleware - Vercel uchun optimallashtirilgan
+bot.use(async (ctx, next) => {
+  try {
+    await authMiddleware(ctx, next);
+  } catch (error) {
+    console.error("Auth middleware error:", error);
+    // Continue without auth if there's an error
+    await next();
+  }
+});
 
 // Start command
 bot.start(async (ctx) => {
-  const user = ctx.state.user;
+  console.log("Start command received from user:", ctx.from.id);
+  
+  try {
+    const user = ctx.state.user;
 
-  if (!user.phoneNumber) {
-    await UserController.startRegistration(ctx);
-  } else {
-    await ctx.reply(
-      `Xush kelibsiz, ${user.firstName}! 👋\n\n` +
-        "Test botiga xush kelibsiz. Quyidagi funksiyalardan birini tanlang:",
-      mainMenu
-    );
+    if (!user.phoneNumber) {
+      await UserController.startRegistration(ctx);
+    } else {
+      await ctx.reply(
+        `Xush kelibsiz, ${user.firstName}! 👋\n\n` +
+          "Test botiga xush kelibsiz. Quyidagi funksiyalardan birini tanlang:",
+        mainMenu
+      );
+    }
+  } catch (error) {
+    console.error("Start command error:", error);
+    await ctx.reply("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
   }
 });
 
@@ -432,7 +447,11 @@ module.exports = async (req, res) => {
 
   try {
     // Database ulanish
-    await connectDB();
+    if (!process.env.MONGODB_URI) {
+      console.log("MONGODB_URI not found, skipping database connection");
+    } else {
+      await connectDB();
+    }
 
     // Bot webhook handler
     if (req.method === "POST") {
@@ -451,6 +470,9 @@ module.exports = async (req, res) => {
       }
 
       console.log("Processing webhook update...");
+      console.log("Update type:", req.body.update_id);
+      console.log("Message:", req.body.message);
+      
       try {
         await bot.handleUpdate(req.body);
         console.log("Webhook update processed successfully");
