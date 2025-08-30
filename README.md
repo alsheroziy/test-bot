@@ -118,6 +118,13 @@ https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://your-vercel-
 
 **Eslatma:** `<YOUR_BOT_TOKEN>` va `your-vercel-app.vercel.app` ni o'zingizning ma'lumotlaringiz bilan almashtiring.
 
+#### 6. Tekshirish
+
+Bot ishlayotganini tekshirish uchun:
+
+- `https://your-vercel-app.vercel.app/api` ga GET so'rov yuboring
+- Javobda `{"status": "Bot is running"}` ko'rishingiz kerak
+
 ## 📁 Loyiha strukturasi
 
 ```

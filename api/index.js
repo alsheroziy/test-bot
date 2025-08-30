@@ -10,12 +10,17 @@ const AdminController = require("../controllers/adminController");
 const { mainMenu } = require("../utils/keyboards");
 
 // Bot yaratish
+if (!process.env.BOT_TOKEN) {
+  throw new Error("BOT_TOKEN environment variable is required");
+}
+
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // Session middleware - Vercel uchun memory session
 bot.use(
   session({
     defaultSession: () => ({}),
+    ttl: 600, // 10 daqiqa
   })
 );
 
@@ -381,7 +386,11 @@ async function handleBackButton(ctx) {
 // Error handler
 bot.catch((err, ctx) => {
   console.error(`Bot error for ${ctx.updateType}:`, err);
-  ctx.reply("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
+  try {
+    ctx.reply("Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.");
+  } catch (replyError) {
+    console.error("Error sending error message:", replyError);
+  }
 });
 
 // Vercel serverless function handler
@@ -397,18 +406,40 @@ module.exports = async (req, res) => {
     return;
   }
 
+  // Handle GET request for health check
+  if (req.method === "GET") {
+    res.status(200).json({
+      status: "Bot is running",
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
   try {
     // Database ulanish
+    if (!process.env.MONGODB_URI) {
+      throw new Error("MONGODB_URI environment variable is required");
+    }
+
     await connectDB();
 
     // Bot webhook handler
     if (req.method === "POST") {
+      console.log("Received webhook update:", req.body);
+      if (!req.body) {
+        throw new Error("No request body received");
+      }
       await bot.handleUpdate(req.body);
     }
 
     res.status(200).json({ ok: true });
   } catch (error) {
     console.error("Webhook error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    // Don't expose internal errors in production
+    const errorMessage =
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : error.message;
+    res.status(500).json({ error: errorMessage });
   }
 };
