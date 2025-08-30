@@ -406,7 +406,7 @@ async function startBot() {
 // Vercel serverless function handler
 module.exports = async (req, res) => {
   console.log("Request received:", req.method, req.url);
-  
+
   // CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -437,20 +437,28 @@ module.exports = async (req, res) => {
     // Bot webhook handler
     if (req.method === "POST") {
       console.log("Received webhook update:", req.body);
-      
+
       if (!req.body) {
         console.log("No request body received");
         res.status(400).json({ error: "No request body" });
         return;
       }
-      
+
       if (!process.env.BOT_TOKEN) {
         console.log("BOT_TOKEN not found");
         res.status(500).json({ error: "Bot token not configured" });
         return;
       }
-      
-      await bot.handleUpdate(req.body);
+
+      console.log("Processing webhook update...");
+      try {
+        await bot.handleUpdate(req.body);
+        console.log("Webhook update processed successfully");
+      } catch (botError) {
+        console.error("Bot update error:", botError);
+        res.status(500).json({ error: "Bot update failed" });
+        return;
+      }
     }
 
     res.status(200).json({ ok: true });
